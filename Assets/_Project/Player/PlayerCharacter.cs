@@ -2,6 +2,7 @@ using UnityEngine;
 using KinematicCharacterController;
 using System;
 using UnityEngine.Rendering;
+using System.Runtime.CompilerServices;
 public struct CharacterInput
 {
     public Quaternion Rotation;
@@ -20,6 +21,7 @@ public enum Stance
 public class PlayerCharacter : MonoBehaviour, ICharacterController
 {
     [SerializeField] private KinematicCharacterMotor motor;
+    [SerializeField] private Transform root;
     [SerializeField] private Transform cameraTarget;
     [Space]
     [SerializeField] private float walkSpeed = 20f;
@@ -30,7 +32,11 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
     [Space]
     [SerializeField] private float standHeight = 2f;
     [SerializeField] private float crouchHeight = 1f;
-
+    [Space]
+    [Range(0,1)]
+    [SerializeField] private float standCameraTargetHeight = 0.9f;
+    [Range(0, 1)]
+    [SerializeField] private float crouchCameraTargetHeight = 0.7f;
 
     private Stance _stance;
     private Quaternion _requestedRotation;
@@ -38,9 +44,12 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
     private bool _requestedJump;
     private bool _requestedCrouch;
 
+    private Collider[] _uncrouchOverlapResult;
+
     public void Initialize()
     {
         _stance = Stance.Stand;
+        _uncrouchOverlapResult = new Collider[8];
         motor.CharacterController = this;
     }
     public void UpdateInput(CharacterInput input)
@@ -64,6 +73,16 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
         var forward = Vector3.ProjectOnPlane(_requestedRotation * Vector3.forward, motor.CharacterUp); // ѕроецируем направление вперед на плоскость
         if (forward != Vector3.zero)
             currentRotation = Quaternion.LookRotation(forward, motor.CharacterUp); // ќбновл€ем вращение персонажа
+    }
+    public void UpdateBody()
+    {
+        var currentHeight = motor.Capsule.height - 1;
+        var normalizedHeight = motor.Capsule.height / standHeight;
+        var cameraTargetHeight = currentHeight * (_stance is Stance.Stand ? standCameraTargetHeight : crouchCameraTargetHeight);
+        var rootTargetScale = new Vector3(1f, normalizedHeight, 1f);
+
+        cameraTarget.localPosition = new Vector3(0f, cameraTargetHeight, 0f);
+        //root.localScale = rootTargetScale;
     }
 
     public void UpdateVelocity(ref Vector3 currentVelocity, float deltaTime)
@@ -105,6 +124,20 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
                 height: standHeight,
                 yOffset: -standHeight * 0
             );
+            if (motor.CharacterOverlap(motor.TransientPosition,motor.TransientRotation,_uncrouchOverlapResult,motor.CollidableLayers,QueryTriggerInteraction.Ignore) > 0)
+            {
+                _requestedCrouch = true;
+                motor.SetCapsuleDimensions
+                (
+                    radius: motor.Capsule.radius,
+                    height: crouchHeight,
+                    yOffset: -crouchHeight * 0.5f
+                );
+            }
+            else
+            {
+                _stance = Stance.Stand;
+            }
         }
     }
     public void BeforeCharacterUpdate(float deltaTime) 
@@ -113,7 +146,6 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
        
         if (_requestedCrouch && _stance is Stance.Stand)
         {
-            Debug.Log("Crouchup");
             _stance = Stance.Crouch;
             motor.SetCapsuleDimensions
             (
