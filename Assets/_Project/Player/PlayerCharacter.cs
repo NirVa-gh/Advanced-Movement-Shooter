@@ -3,12 +3,15 @@ using KinematicCharacterController;
 using System;
 using UnityEngine.Rendering;
 using System.Runtime.CompilerServices;
+using System.Xml.Schema;
 public struct CharacterInput
 {
     public Quaternion Rotation;
     public Vector2 Move;
     public bool Jump;
+    public bool JumpSustain;
     public CrouchInput Crouch;
+
 }
 public enum CrouchInput
 {
@@ -23,15 +26,28 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
     [SerializeField] private KinematicCharacterMotor motor;
     [SerializeField] private Transform root;
     [SerializeField] private Transform cameraTarget;
+
     [Space]
     [SerializeField] private float walkSpeed = 20f;
     [SerializeField] private float crouchSpeed = 7f;
+
+    [Space]
+    [SerializeField] private float airSpeed = 15f;
+    [SerializeField] private float airAcceleration = 70f;
+
     [Space]
     [SerializeField] private float jumpSpeed = 20f;
+    [SerializeField] private float jumpSustainGravity = 0.4f;
     [SerializeField] private float gravity = -90f;
+
     [Space]
     [SerializeField] private float standHeight = 2f;
     [SerializeField] private float crouchHeight = 1f;
+    [SerializeField] private float crouchHeightResponce = 15f;
+
+    [SerializeField] private float walkResponce = 15f;
+    [SerializeField] private float crouchResponce = 15f;
+
     [Space]
     [Range(0,1)]
     [SerializeField] private float standCameraTargetHeight = 0.9f;
@@ -39,9 +55,11 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
     [SerializeField] private float crouchCameraTargetHeight = 0.7f;
 
     private Stance _stance;
+
     private Quaternion _requestedRotation;
     private Vector3 _requestedMovement;
     private bool _requestedJump;
+    private bool _requestedSusteinedJump;
     private bool _requestedCrouch;
 
     private Collider[] _uncrouchOverlapResult;
@@ -60,6 +78,7 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
         _requestedMovement = input.Rotation * _requestedMovement;               // Применяем вращение к вектору движения
 
         _requestedJump = _requestedJump || input.Jump;                          // Обновляем флаг прыжка
+        _requestedSusteinedJump = input.JumpSustain;
         _requestedCrouch = input.Crouch switch
         {
             CrouchInput.Toggle => !_requestedCrouch,
@@ -74,15 +93,29 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
         if (forward != Vector3.zero)
             currentRotation = Quaternion.LookRotation(forward, motor.CharacterUp); // Обновляем вращение персонажа
     }
-    public void UpdateBody()
+    public void UpdateBody(float deltaTime)
     {
-        var currentHeight = motor.Capsule.height - 1;
-        var normalizedHeight = motor.Capsule.height / standHeight;
-        var cameraTargetHeight = currentHeight * (_stance is Stance.Stand ? standCameraTargetHeight : crouchCameraTargetHeight);
+        var currentHeight = motor.Capsule.height;
+        var normalizedHeight = currentHeight / standHeight;
+        var cameraTargetHeight = currentHeight * 
+            (_stance is Stance.Stand 
+            ? standCameraTargetHeight 
+            : crouchCameraTargetHeight
+            );
         var rootTargetScale = new Vector3(1f, normalizedHeight, 1f);
 
-        cameraTarget.localPosition = new Vector3(0f, cameraTargetHeight, 0f);
-        //root.localScale = rootTargetScale;
+        cameraTarget.localPosition = Vector3.Lerp
+            (
+            a: cameraTarget.localPosition, 
+            b: new Vector3 (0f,cameraTargetHeight,0f), 
+            t: 1f - Mathf.Exp(-deltaTime * crouchHeightResponce)
+            );
+        root.localScale = Vector3.Lerp
+            (
+            a: root.localScale,
+            b: rootTargetScale,
+            t: 1f - Mathf.Exp(-deltaTime * crouchHeightResponce)
+            );
     }
 
     public void UpdateVelocity(ref Vector3 currentVelocity, float deltaTime)
@@ -95,18 +128,77 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
                 surfaceNormal: motor.GroundingStatus.GroundNormal
             ) * _requestedMovement.magnitude; // Получаем движение вдоль поверхности
 
-            var speed = _stance is Stance.Stand ? walkSpeed : crouchSpeed;
-            currentVelocity = groundedMovement * speed; // Обновляем скорость
+            var speed = _stance is Stance.Stand 
+                ? walkSpeed 
+                : crouchSpeed;
+            var responce = _stance is Stance.Stand
+                ? walkResponce
+                : crouchResponce;
+
+            var targetVelocity = groundedMovement * speed;
+            currentVelocity = Vector3.Lerp
+                (
+                a: currentVelocity,
+                b: targetVelocity,
+                t: 1f - Mathf.Exp(-deltaTime * responce)
+                );
+          
         }
         else // Если персонаж в воздухе
         {
-            currentVelocity += motor.CharacterUp * gravity * deltaTime; // Применяем гравитацию
+            //Move in the air
+
+            if(_requestedMovement.sqrMagnitude > 0f)
+            {
+                // Request movement projected onto movement plane
+                var planarMovement = Vector3.ProjectOnPlane
+                    (
+                    vector: _requestedMovement,
+                    planeNormal: motor.CharacterUp
+                    ).normalized  * _requestedMovement.magnitude;
+
+                // Current velocity on movement plane
+                var currentPlanarVelocity = Vector3.ProjectOnPlane
+                    (
+                    vector: _requestedMovement,
+                    planeNormal: motor.CharacterUp
+                    );
+
+                // Calculate force
+                var movementForce = planarMovement * airAcceleration * deltaTime;
+                // Add planar velocity to targer velocity
+                var targetPlanarVelocity = currentPlanarVelocity + movementForce;
+                // Limit target velocity
+                targetPlanarVelocity = Vector3.ClampMagnitude(targetPlanarVelocity, airSpeed);
+                // Steer toward current velocity
+                currentVelocity += targetPlanarVelocity - currentPlanarVelocity;
+
+
+
+            }
+           
+
+
+            //Gravity
+            var effectiveGravity = gravity;
+            var verticalSpeed = Vector3.Dot
+                (
+                currentVelocity,
+                motor.CharacterUp
+                );
+
+            if(_requestedSusteinedJump && verticalSpeed > 0f)
+            {
+                effectiveGravity *= jumpSustainGravity;
+            }
+
+            currentVelocity += motor.CharacterUp * effectiveGravity * deltaTime; // Применяем гравитацию
         }
 
         if (_requestedJump) // Если запрошен прыжок
         {
             _requestedJump = false; // Сбрасываем флаг прыжка
-            motor.ForceUnground(time: 0f); // Отрываем персонажа от земли
+            motor.ForceUnground(time: 1f); // Отрываем персонажа от земли
             var currentVerticalSpeed = Vector3.Dot(currentVelocity, motor.CharacterUp);
             var targetVerticalSpeed = Mathf.Max(currentVerticalSpeed, jumpSpeed);
             currentVelocity += motor.CharacterUp * (targetVerticalSpeed - currentVerticalSpeed);
@@ -122,16 +214,21 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
             (
                 radius: motor.Capsule.radius,
                 height: standHeight,
-                yOffset: -standHeight * 0
+                yOffset: standHeight * 0.5f
             );
-            if (motor.CharacterOverlap(motor.TransientPosition,motor.TransientRotation,_uncrouchOverlapResult,motor.CollidableLayers,QueryTriggerInteraction.Ignore) > 0)
+            if (motor.CharacterOverlap(
+                motor.TransientPosition,
+                motor.TransientRotation,
+                _uncrouchOverlapResult,
+                motor.CollidableLayers,
+                QueryTriggerInteraction.Ignore) > 0)
             {
                 _requestedCrouch = true;
                 motor.SetCapsuleDimensions
                 (
                     radius: motor.Capsule.radius,
                     height: crouchHeight,
-                    yOffset: -crouchHeight * 0.5f
+                    yOffset: crouchHeight * 0.5f
                 );
             }
             else
@@ -151,7 +248,7 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
             (
                 radius: motor.Capsule.radius,
                 height: crouchHeight,
-                yOffset: -crouchHeight * 0.5f
+                yOffset: crouchHeight * 0.5f
             );
         }
     }
