@@ -160,7 +160,7 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
                 // Current velocity on movement plane
                 var currentPlanarVelocity = Vector3.ProjectOnPlane
                     (
-                    vector: _requestedMovement,
+                    vector: currentVelocity,
                     planeNormal: motor.CharacterUp
                     );
 

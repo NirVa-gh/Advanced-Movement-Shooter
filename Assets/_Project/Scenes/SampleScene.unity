@@ -224,6 +224,7 @@ GameObject:
   - component: {fileID: 138323887}
   - component: {fileID: 138323886}
   - component: {fileID: 138323885}
+  - component: {fileID: 138323888}
   m_Layer: 0
   m_Name: Character
   m_TagString: Untagged
@@ -265,10 +266,16 @@ MonoBehaviour:
   cameraTarget: {fileID: 1464478002}
   walkSpeed: 20
   crouchSpeed: 7
+  airSpeed: 15
+  airAcceleration: 70
   jumpSpeed: 20
+  jumpSustainGravity: 0.4
   gravity: -90
   standHeight: 2
   crouchHeight: 1
+  crouchHeightResponce: 15
+  walkResponce: 15
+  crouchResponce: 15
   standCameraTargetHeight: 0.9
   crouchCameraTargetHeight: 0.7
 --- !u!114 &138323886
@@ -336,6 +343,14 @@ CapsuleCollider:
   m_Height: 2
   m_Direction: 1
   m_Center: {x: 0, y: 0, z: 0}
+--- !u!33 &138323888
+MeshFilter:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 138323883}
+  m_Mesh: {fileID: 10208, guid: 0000000000000000e000000000000000, type: 0}
 --- !u!1 &173802054
 GameObject:
   m_ObjectHideFlags: 0
