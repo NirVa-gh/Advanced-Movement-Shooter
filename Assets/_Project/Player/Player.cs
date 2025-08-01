@@ -42,9 +42,25 @@ public class Player : MonoBehaviour
         };
         playerCharacter.UpdateInput(characterInput);
         playerCharacter.UpdateBody(deltaTime);
+
+        //Teleport unity_ediotor
+        #if UNITY_EDITOR
+        if (Keyboard.current.rKey.wasPressedThisFrame)
+        {
+            var ray = new Ray(playerCamera.transform.position, playerCamera.transform.forward);
+            if(Physics.Raycast(ray, out var hit))
+            {
+                Teleport(hit.point);
+            }
+        }
+        #endif
     }
     private void LateUpdate()
     {
         playerCamera.UpdatePosition(playerCharacter.GetCameraTarget());
+    }
+    private void Teleport(Vector3 position)
+    {
+        playerCharacter.SetPosition(position);
     }
 }
