@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.Rendering;
 
 public class Player : MonoBehaviour
 {
@@ -7,9 +8,10 @@ public class Player : MonoBehaviour
     [SerializeField] private PlayerCamera playerCamera;
     [SerializeField] private CameraSpring cameraSpring;
     [SerializeField] private CameraLean cameraLean;
-
+    [SerializeField] private StanceVignette stanceVignette;
+    [SerializeField] private Volume volume;
     private PlayerInputActions _inputActions;
-
+   
 
     private void Start()
     {
@@ -22,6 +24,7 @@ public class Player : MonoBehaviour
         playerCamera.Initialize(playerCharacter.GetCameraTarget());
         cameraSpring.Initialize();
         cameraLean.Initialize();
+        stanceVignette.Initialize(volume.profile);
     }
     private void OnDestroy()
     {
@@ -68,6 +71,7 @@ public class Player : MonoBehaviour
         playerCamera.UpdatePosition(cameraTarget);
         cameraSpring.UpdateSpring(deltaTime, cameraTarget.up);
         cameraLean.UpdateLean(deltaTime, state.Acceleration, cameraTarget.up);
+        stanceVignette.UpdateVignette(deltaTime, state.Stance);
 
     }
     private void Teleport(Vector3 position)

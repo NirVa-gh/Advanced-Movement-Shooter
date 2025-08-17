@@ -226,7 +226,6 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
                     currentVelocity += slopeAcceleration * deltaTime;
                 }
 
-
                 // Steer towards requested movement direction
                 {
                     var currentSpeed = currentVelocity.magnitude;
@@ -235,7 +234,7 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
                     var steerForce = (targetVelocity - steerVelocity) * slideSteerAcceleration * deltaTime;
                     steerVelocity += steerForce;
                     steerVelocity = Vector3.ClampMagnitude(steerVelocity, currentSpeed);
-                    _state.Acceleration = steerVelocity - currentVelocity;
+                    _state.Acceleration = (steerVelocity - currentVelocity) / deltaTime;
                     currentVelocity = steerVelocity;
                 }
 
