@@ -5,16 +5,24 @@ public struct CameraInput
 }
 public class PlayerCamera : MonoBehaviour
 {
-    private Vector3 _eulerAngels;
+    [SerializeField] private float minPitch = -90f;
+    [SerializeField] private float maxPitch = 80f;
+    [SerializeField] private float sensitivity = 2f;
+    private Vector3 _eulerAngles;
+
     public void Initialize(Transform target)
     {
         transform.position = target.position;
-        transform.eulerAngles = _eulerAngels = target.eulerAngles;
+        transform.eulerAngles = _eulerAngles = target.eulerAngles;
     }
     public void UpdateRotation(CameraInput input)
     {
-        _eulerAngels += new Vector3(-input.Look.y, input.Look.x);
-        transform.eulerAngles = _eulerAngels;
+        _eulerAngles.x += -input.Look.y * sensitivity;
+        _eulerAngles.y += input.Look.x * sensitivity;
+
+        _eulerAngles.x = Mathf.Clamp(_eulerAngles.x, minPitch, maxPitch);
+
+        transform.eulerAngles = _eulerAngles;
     }
     public void UpdatePosition(Transform target)
     {

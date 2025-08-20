@@ -143,12 +143,12 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
             b: new Vector3 (0f,cameraTargetHeight,0f), 
             t: 1f - Mathf.Exp(-deltaTime * crouchHeightResponce)
             );
-        root.localScale = Vector3.Lerp
-            (
-            a: root.localScale,
-            b: rootTargetScale,
-            t: 1f - Mathf.Exp(-deltaTime * crouchHeightResponce)
-            );
+            //root.localScale = Vector3.Lerp
+            //    (
+            //    a: root.localScale,
+            //    b: rootTargetScale,
+            //    t: 1f - Mathf.Exp(-deltaTime * crouchHeightResponce)
+            //    );
     }
     public void UpdateVelocity(ref Vector3 currentVelocity, float deltaTime)
     {
@@ -305,8 +305,10 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
             {
                 _requestedJump = false;
                 _requestedCrouch = false;
-                motor.ForceUnground(time: 0f);   // !!!Было time: 1f
+                motor.ForceUnground(time: 0);  
                 _ungroundedDueToJump = true;
+                //_timeSinceJumpUngrounded = float.MaxValue;
+                //_timeSinceJumpRequest = float.MaxValue;
                 var currentVerticalSpeed = Vector3.Dot(currentVelocity, motor.CharacterUp);
                 var targetVerticalSpeed = Mathf.Max(currentVerticalSpeed, jumpSpeed);
                 currentVelocity += motor.CharacterUp * (targetVerticalSpeed - currentVerticalSpeed);
@@ -338,7 +340,6 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
     }
     public void AfterCharacterUpdate(float deltaTime)
     {
-        // Uncrouch — только если мы реально crouch (НЕ если мы в Slide)
         if (!_requestedCrouch && _state.Stance == Stance.Crouch)
         {
             // Попытка встать
@@ -355,7 +356,6 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
                 motor.CollidableLayers,
                 QueryTriggerInteraction.Ignore) > 0)
             {
-                // Не можем встать — оставляем crouch
                 _requestedCrouch = true;
                 motor.SetCapsuleDimensions(
                     radius: motor.Capsule.radius,
@@ -370,7 +370,6 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
             }
         }
 
-        // Обновляем состояние
         _state.Grouded = motor.GroundingStatus.IsStableOnGround;
         _state.Velocity = motor.Velocity;
         _lastState = _tempState;

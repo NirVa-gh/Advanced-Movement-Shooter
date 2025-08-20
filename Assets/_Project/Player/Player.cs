@@ -10,8 +10,9 @@ public class Player : MonoBehaviour
     [SerializeField] private CameraLean cameraLean;
     [SerializeField] private StanceVignette stanceVignette;
     [SerializeField] private Volume volume;
+
     private PlayerInputActions _inputActions;
-   
+    
 
     private void Start()
     {
