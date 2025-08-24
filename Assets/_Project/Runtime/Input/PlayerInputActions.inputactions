@@ -40,6 +40,15 @@
                     "processors": "",
                     "interactions": "",
                     "initialStateCheck": false
+                },
+                {
+                    "name": "Sprint",
+                    "type": "Button",
+                    "id": "bbcef425-7f32-4e97-9c81-7b01e9f3bc77",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
                 }
             ],
             "bindings": [
@@ -70,6 +79,17 @@
                     "id": "12721a36-e2eb-4bd4-81df-4811a38e25dd",
                     "path": "<Mouse>/{Back}",
                     "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Crouch",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "4b3f7942-ce2e-41af-ab78-69e4f776dcb2",
+                    "path": "<Keyboard>/c",
+                    "interactions": "Press",
                     "processors": "",
                     "groups": "",
                     "action": "Crouch",
@@ -141,6 +161,17 @@
                     "action": "Move",
                     "isComposite": false,
                     "isPartOfComposite": true
+                },
+                {
+                    "name": "",
+                    "id": "a4735eb6-df12-4e94-bd00-a678b70d031b",
+                    "path": "<Keyboard>/leftShift",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Sprint",
+                    "isComposite": false,
+                    "isPartOfComposite": false
                 }
             ]
         }

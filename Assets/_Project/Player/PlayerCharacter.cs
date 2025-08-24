@@ -10,13 +10,18 @@ public struct CharacterInput
     public Quaternion Rotation;
     public Vector2 Move;
     public bool Jump;
+    public bool Sprint;
     public bool JumpSustain;
     public CrouchInput Crouch;
 
 }
 public enum CrouchInput
 {
-    None, Toggle
+    None, Hold, Toggle
+}
+public enum Sprint
+{
+    None, Hold, Toggle
 }
 
 public struct CharacterState
@@ -59,6 +64,10 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
     [SerializeField] private float crouchResponce = 15f;
 
     [Space]
+    [SerializeField] private float sprintSpeed = 35f;
+    [SerializeField] private float sprintAcceleration = 10f;
+
+    [Space]
     [SerializeField] private float slideStartSpeed = 25f;
     [SerializeField] private float slideEndSpeed = 15f;
     [SerializeField] private float slideFriction = 0.8f;
@@ -82,6 +91,7 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
     private Quaternion _requestedRotation;
     private Vector3 _requestedMovement;
     private bool _requestedJump;
+    private bool _requestedSprint = false;
     private bool _requestedSusteinedJump;
     private bool _requestedCrouch;
     private bool _isSliding = false;
@@ -107,17 +117,35 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
 
         var wasRequestingJump = _requestedJump;
         _requestedJump = _requestedJump || input.Jump;
+        _requestedSprint = input.Sprint;
         if (_requestedJump && !wasRequestingJump)
             _timeSinceJumpRequest = 0f;
         
         // Обновляем флаг прыжка
         _requestedSusteinedJump = input.JumpSustain;
-        _requestedCrouch = input.Crouch switch
+        // Обновляем флаг приседа
+        if (_state.Stance == Stance.Crouch && input.Sprint)
         {
-            CrouchInput.Toggle => !_requestedCrouch,
-            CrouchInput.None => _requestedCrouch,
-            _ => _requestedCrouch
-        };
+            _requestedCrouch = false;       // убираем присед
+            _state.Stance = Stance.Stand;   // сразу ставим стоя
+        }
+        else
+        {
+            // обычная логика приседа
+            _requestedCrouch = input.Crouch switch
+            {
+                CrouchInput.Toggle => !_requestedCrouch,
+                CrouchInput.None => _requestedCrouch,
+                _ => _requestedCrouch
+            };
+        }
+
+        //_requestedCrouch = input.Crouch switch
+        //{
+        //    CrouchInput.Toggle => !_requestedCrouch,
+        //    CrouchInput.None => _requestedCrouch,
+        //    _ => _requestedCrouch
+        //};
     }
     #region ICharacterController
     public void UpdateRotation(ref Quaternion currentRotation, float deltaTime)
@@ -152,40 +180,53 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
     }
     public void UpdateVelocity(ref Vector3 currentVelocity, float deltaTime)
     {
-        _state.Acceleration = Vector3.zero;
+        // Сбрасываем ускорение на каждый кадр
+        _state.Acceleration = Vector3.zero; 
 
-        if (motor.GroundingStatus.IsStableOnGround) // Если персонаж на земле
+        // =========================
+        // 1. Движение по земле
+        // =========================
+        if (motor.GroundingStatus.IsStableOnGround) 
         {
+            // Сброс таймера запроса прыжка и флага "в воздухе из-за прыжка"
             _timeSinceJumpRequest = 0f;
             _ungroundedDueToJump = false;
+
+            // Получаем движение по поверхности (с учётом наклона)
             var groundedMovement = motor.GetDirectionTangentToSurface(
                 direction: _requestedMovement,
                 surfaceNormal: motor.GroundingStatus.GroundNormal
             ) * _requestedMovement.magnitude;
 
-            // Start sliding
+            // =========================
+            // 1.1. Начало слайда
+            // =========================
             {
                 var moving = groundedMovement.sqrMagnitude > 0f;
                 var crouching = _state.Stance is Stance.Crouch;
                 var wasStanding = _lastState.Stance is Stance.Stand;
                 var wasInAir = !_lastState.Grouded;
+                // Если персонаж движется и в приседе, и раньше стоял или был в воздухе
                 if (moving && crouching && (wasStanding || wasInAir))
                 {
                     _state.Stance = Stance.Slide;
                     _isSliding = true;
                     _slideAirTimer = 0f;
 
-#if UNITY_EDITOR
+                    #if UNITY_EDITOR
                     Debug.Log($"[Slide] started. wasInAir={wasInAir}, lastSpeed={_lastState.Velocity.magnitude:F2}");
-#endif
+                    #endif
+
                     if (wasInAir)
                     {
+                        // Переносим горизонтальную скорость с предыдущего кадра
                         currentVelocity = Vector3.ProjectOnPlane(
                             vector: _lastState.Velocity,
                             planeNormal: motor.GroundingStatus.GroundNormal
                         );
                     }
 
+                    // Устанавливаем стартовую скорость слайда
                     var slideSpeed = Mathf.Max(slideStartSpeed, currentVelocity.magnitude);
                     currentVelocity = motor.GetDirectionTangentToSurface(
                         direction: currentVelocity,
@@ -194,13 +235,23 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
                 }
             }
 
-            // Move (stand / crouch)
+            // =========================
+            // 1.2. Движение стоя / в приседе
+            // =========================
             if (_state.Stance is Stance.Stand or Stance.Crouch)
             {
+                // Выбираем скорость: стоя — walkSpeed, присед — crouchSpeed
                 var speed = _state.Stance is Stance.Stand ? walkSpeed : crouchSpeed;
+
+                // Добавляем спринт только если стоим
+                if (_requestedSprint && _state.Stance == Stance.Stand)
+                    speed *= 1.5f;
+
                 var responce = _state.Stance is Stance.Stand ? walkResponce : crouchResponce;
 
+                // Целевая скорость движения
                 var targetVelocity = groundedMovement * speed;
+                // Плавное сглаживание скорости
                 var moveVelocity = Vector3.Lerp
                 (
                     a: currentVelocity,
@@ -210,12 +261,14 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
                 _state.Acceleration = moveVelocity - currentVelocity;
                 currentVelocity = moveVelocity;          
             }
-            else // Slide branch
+            else 
             {
-                // Friction
+                // =========================
+                // 1.3. Логика слайда
+                // =========================
+                // Слайд: трение
                 currentVelocity -= currentVelocity * (slideFriction * deltaTime);
-
-                // Slope acceleration — правильно: проекция вектора гравитации на плоскость поверхности
+                // Слайд: ускорение по склону
                 {
                     var gravityVector = motor.CharacterUp * gravity;
                     var slopeAcceleration = Vector3.ProjectOnPlane
@@ -225,8 +278,7 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
                     );
                     currentVelocity += slopeAcceleration * deltaTime;
                 }
-
-                // Steer towards requested movement direction
+                // Слайд: управление движением
                 {
                     var currentSpeed = currentVelocity.magnitude;
                     var targetVelocity = groundedMovement * currentSpeed;
@@ -237,16 +289,20 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
                     _state.Acceleration = (steerVelocity - currentVelocity) / deltaTime;
                     currentVelocity = steerVelocity;
                 }
-
+                // Завершаем слайд, если скорость слишком мала
                 if (currentVelocity.magnitude < slideEndSpeed)
                     _state.Stance = Stance.Crouch;
             }
         }
-        else // Air movement (оставляем без изменений)
+        else 
         {
+            // =========================
+            // 2. Движение в воздухе
+            // =========================
             _timeSinceJumpUngrounded += deltaTime;
             if (_requestedMovement.sqrMagnitude > 0f)
             {
+                // Плоское движение (по горизонтали)
                 var planarMovement = Vector3.ProjectOnPlane(
                     vector: _requestedMovement,
                     planeNormal: motor.CharacterUp
@@ -259,6 +315,7 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
 
                 var movementForce = planarMovement * airAcceleration * deltaTime;
 
+                // Ограничение скорости в воздухе
                 if (currentPlanarVelocity.magnitude < airSpeed)
                 {
                     var targetPlanarVelocity = currentPlanarVelocity + movementForce;
@@ -274,6 +331,7 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
                     movementForce = constraindeMovementForce;
                 }
 
+                // Коррекция при обнаружении земли
                 if (motor.GroundingStatus.FoundAnyGround)
                 {
                     if (Vector3.Dot(movementForce, currentVelocity + movementForce) > 0f)
@@ -288,6 +346,7 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
                 currentVelocity += movementForce;
             }
 
+            // Применяем гравитацию
             var effectiveGravity = gravity;
             var verticalSpeed = Vector3.Dot(currentVelocity, motor.CharacterUp);
             if (_requestedSusteinedJump && verticalSpeed > 0f)
@@ -295,12 +354,14 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
 
             currentVelocity += motor.CharacterUp * effectiveGravity * deltaTime;
         }
-
-        // Jump 
+        // =========================
+        // 3. Прыжки
+        // =========================
         if (_requestedJump)
         {
             var grounded = motor.GroundingStatus.IsStableOnGround;
             var canCoyoteJump = _timeSinceJumpUngrounded < coyoteTime && !_ungroundedDueToJump;
+            // Выполняем прыжок
             if (grounded || canCoyoteJump)
             {
                 _requestedJump = false;
@@ -315,6 +376,7 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
             }
             else
             {
+                // Если прыгнуть нельзя, сохраняем возможность прыгнуть в пределах "coyote time"
                 _timeSinceJumpRequest += deltaTime;
                 var canJumpLater = _timeSinceJumpRequest < coyoteTime;
                 _requestedJump = canJumpLater;
@@ -326,7 +388,7 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
     public void BeforeCharacterUpdate(float deltaTime)
     {
         _tempState = _state;
-        //Crouch   
+ 
         if (_requestedCrouch && _state.Stance is Stance.Stand)
         {
             _state.Stance = Stance.Crouch;
@@ -437,7 +499,7 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
     private void OnDrawGizmos()
     {
         if (!Application.isPlaying) return;
-        if(_onOffDebug)
+        if (_onOffDebug)
         {
             // --- 1. Отрисовка позиции ---
             Gizmos.color = _state.Grouded ? Color.green : Color.red;
@@ -447,15 +509,23 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
             Gizmos.color = Color.blue;
             Gizmos.DrawLine(transform.position, transform.position + _state.Velocity);
 
-            // --- 3. Подготовка текста ---
+            // --- 3. Отрисовка направления спринта ---
+            if (_requestedSprint)
+            {
+                Gizmos.color = Color.yellow;
+                Gizmos.DrawLine(transform.position, transform.position + _requestedMovement.normalized);
+            }
+
+            // --- 4. Подготовка текста ---
             string debugInfo =
                 $"=== PLAYER DEBUG ===\n" +
                 $"Stance: {_state.Stance}\n" +
                 $"Grounded: {_state.Grouded}\n" +
-                $"Velocity:({_state.Velocity.magnitude:F2} m/s)\n" +
+                $"Velocity: ({_state.Velocity.magnitude:F2} m/s)\n" +
                 $"Requested Jump: {_requestedJump}\n" +
                 $"Sustained Jump: {_requestedSusteinedJump}\n" +
                 $"Requested Crouch: {_requestedCrouch}\n" +
+                $"Sprint: {_requestedSprint}\n" +               // <-- добавили индикатор спринта
                 $"Walk Speed: {walkSpeed}\n" +
                 $"Crouch Speed: {crouchSpeed}\n" +
                 $"Air Speed: {airSpeed}\n" +
@@ -469,7 +539,7 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
                 $"FoundAnyGround: {motor.GroundingStatus.FoundAnyGround}\n" +
                 $"slideAirTimer: {_slideAirTimer:F3}\n";
 
-            // --- 4. Отрисовка текста в сцене ---
+            // --- 5. Отрисовка текста в сцене ---
             UnityEditor.Handles.BeginGUI();
             {
                 var pos = transform.position + Vector3.up * 2.5f;
@@ -491,4 +561,5 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
         }
     }
 #endif
+
 }
